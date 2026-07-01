@@ -19,6 +19,14 @@ interface ChoiceGroup {
   id: string;
   label: string;
   choiceQuestIds: string[];
+  outcomes: Record<string, ChoiceOutcome>;
+}
+
+interface ChoiceOutcome {
+  unlockedQuestIds: string[];
+  failedQuestIds: string[];
+  recoveryQuestIds: string[];
+  reputationDeltas: Partial<Record<Merchant, number>>;
 }
 
 interface QuestProgress {
@@ -35,6 +43,7 @@ interface UserProgress {
       selectedQuestId: string;
       selectedMerchant: Merchant;
       selectedAt: string;
+      outcome?: ChoiceOutcome;
     }
   >;
 }
@@ -57,7 +66,7 @@ const quests: Quest[] = [
     name: "Chemical - Part 4",
     merchant: "Skier",
     previousQuestIds: ["chemical-part-3"],
-    leadsToQuestIds: ["no-offence", "trust-regain", "safe-corridor"],
+    leadsToQuestIds: [],
     choiceGroupId: "chemical-part-4-resolution",
   },
   {
@@ -65,7 +74,7 @@ const quests: Quest[] = [
     name: "Out of Curiosity",
     merchant: "Therapist",
     previousQuestIds: ["chemical-part-3"],
-    leadsToQuestIds: ["loyalty-buyout", "no-offence", "safe-corridor"],
+    leadsToQuestIds: [],
     choiceGroupId: "chemical-part-4-resolution",
   },
   {
@@ -73,7 +82,7 @@ const quests: Quest[] = [
     name: "Big Customer",
     merchant: "Prapor",
     previousQuestIds: ["chemical-part-3"],
-    leadsToQuestIds: ["trust-regain", "loyalty-buyout", "safe-corridor"],
+    leadsToQuestIds: [],
     choiceGroupId: "chemical-part-4-resolution",
   },
   {
@@ -111,6 +120,17 @@ const choiceGroups: ChoiceGroup[] = [
     id: "chemical-part-4-resolution",
     label: "Choix de rendu Chemical - Part 4",
     choiceQuestIds: ["chemical-part-4", "out-of-curiosity", "big-customer"],
+    outcomes: {
+      "chemical-part-4": {
+        unlockedQuestIds: ["no-offence", "trust-regain", "loyalty-buyout"],
+        failedQuestIds: ["big-customer", "out-of-curiosity"],
+        recoveryQuestIds: ["trust-regain", "loyalty-buyout", "no-offence"],
+        reputationDeltas: {
+          Prapor: -0.25,
+          Therapist: -0.25,
+        },
+      },
+    },
   },
 ];
 
@@ -247,13 +267,18 @@ function completeChoice(
   }
 
   const resolvedAt = new Date().toISOString();
+  const outcome = choiceGroup.outcomes[selectedQuestId];
   completeQuest(progress, selectedQuestId, resolvedAt);
 
-  for (const questId of choiceGroup.choiceQuestIds) {
-    if (questId === selectedQuestId) {
-      continue;
-    }
+  for (const questId of outcome?.unlockedQuestIds ?? []) {
+    unlockQuest(progress, questId);
+  }
 
+  const failedQuestIds =
+    outcome?.failedQuestIds ??
+    choiceGroup.choiceQuestIds.filter((questId) => questId !== selectedQuestId);
+
+  for (const questId of failedQuestIds) {
     progress.quests[questId] = {
       status: "failed",
       failedAt: resolvedAt,
@@ -264,6 +289,7 @@ function completeChoice(
     selectedQuestId,
     selectedMerchant: selectedQuest.merchant,
     selectedAt: resolvedAt,
+    outcome,
   };
 }
 
